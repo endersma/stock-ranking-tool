@@ -1,0 +1,77 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Ranking Tool</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background-color: #f4f4f4; }
+  </style>
+</head>
+<body>
+  <h1>Stock Ranking Tool</h1>
+  <input type="file" id="fileInput" accept=".xlsx,.csv" />
+  <div id="output"></div>
+
+  <script>
+    document.getElementById('fileInput').addEventListener('change', handleFile, false);
+
+    function handleFile(e) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function (e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(sheet);
+
+        // Add ranking logic
+        json.forEach(stock => {
+          const valueScore = rankValue(stock["P/E Ratio"], stock["P/B Ratio"]);
+          const qualityScore = stock["ROE (%)"] || 0;
+          const momentumScore = avg([stock["Sales Growth (%)"], stock["1-Year Perf (%)"]]);
+          stock["Value Score"] = valueScore;
+          stock["Quality Score"] = qualityScore;
+          stock["Momentum Score"] = momentumScore;
+          stock["Weighted Total"] = (valueScore * 0.4 + qualityScore * 0.3 + momentumScore * 0.3).toFixed(2);
+        });
+
+        json.sort((a, b) => b["Weighted Total"] - a["Weighted Total"]);
+
+        renderTable(json);
+      };
+
+      reader.readAsArrayBuffer(file);
+    }
+
+    function rankValue(pe, pb) {
+      const peScore = pe ? 100 / pe : 0;
+      const pbScore = pb ? 100 / pb : 0;
+      return ((peScore + pbScore) / 2).toFixed(2);
+    }
+
+    function avg(values) {
+      const valid = values.filter(v => typeof v === 'number');
+      return valid.length ? (valid.reduce((a, b) => a + b, 0) / valid.length).toFixed(2) : 0;
+    }
+
+    function renderTable(data) {
+      const output = document.getElementById('output');
+      const headers = Object.keys(data[0]);
+      let html = '<table><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+      data.forEach(row => {
+        html += '<tr>' + headers.map(h => `<td>${row[h] ?? ''}</td>`).join('') + '</tr>';
+      });
+      html += '</table>';
+      output.innerHTML = html;
+    }
+  </script>
+</body>
+</html>
