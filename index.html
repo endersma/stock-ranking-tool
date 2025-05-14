@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,14 +10,20 @@
     table { border-collapse: collapse; width: 100%; margin-top: 20px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
     th { background-color: #f4f4f4; }
+    #stockInput { width: 100%; padding: 10px; margin-top: 20px; }
   </style>
 </head>
 <body>
   <h1>Stock Ranking Tool</h1>
   <input type="file" id="fileInput" accept=".xlsx,.csv" />
+  <h3>Or enter ticker symbols (comma-separated):</h3>
+  <input type="text" id="stockInput" placeholder="e.g. AAPL,MSFT,GOOG" />
+  <button onclick="fetchStockData()">Fetch and Rank Stocks</button>
   <div id="output"></div>
 
   <script>
+    const API_KEY = 'xYgq5nKyoY0kpGiY6TMzWybyaWEySF4G'; // Replace with your own FMP API key
+
     document.getElementById('fileInput').addEventListener('change', handleFile, false);
 
     function handleFile(e) {
@@ -32,23 +37,48 @@
         const sheet = workbook.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(sheet);
 
-        // Add ranking logic
-        json.forEach(stock => {
-          const valueScore = rankValue(stock["P/E Ratio"], stock["P/B Ratio"]);
-          const qualityScore = stock["ROE (%)"] || 0;
-          const momentumScore = avg([stock["Sales Growth (%)"], stock["1-Year Perf (%)"]]);
-          stock["Value Score"] = valueScore;
-          stock["Quality Score"] = qualityScore;
-          stock["Momentum Score"] = momentumScore;
-          stock["Weighted Total"] = (valueScore * 0.4 + qualityScore * 0.3 + momentumScore * 0.3).toFixed(2);
-        });
-
-        json.sort((a, b) => b["Weighted Total"] - a["Weighted Total"]);
-
-        renderTable(json);
+        processStockData(json);
       };
 
       reader.readAsArrayBuffer(file);
+    }
+
+    function fetchStockData() {
+      const tickers = document.getElementById('stockInput').value.split(',').map(t => t.trim().toUpperCase());
+      const promises = tickers.map(ticker => fetch(`https://financialmodelingprep.com/api/v3/profile/${ticker}?apikey=${API_KEY}`)
+        .then(res => res.json())
+        .then(data => data[0] ? formatFMPData(data[0]) : null));
+
+      Promise.all(promises).then(results => {
+        const validResults = results.filter(Boolean);
+        processStockData(validResults);
+      });
+    }
+
+    function formatFMPData(stock) {
+      return {
+        Ticker: stock.symbol,
+        "P/E Ratio": parseFloat(stock.pe) || 0,
+        "P/B Ratio": parseFloat(stock.priceToBookRatio) || 0,
+        "ROE (%)": parseFloat(stock.returnOnEquityTTM) || 0,
+        "Sales Growth (%)": parseFloat(stock.revenueGrowth) * 100 || 0,
+        "1-Year Perf (%)": 0  // not available from this endpoint
+      };
+    }
+
+    function processStockData(data) {
+      data.forEach(stock => {
+        const valueScore = rankValue(stock["P/E Ratio"], stock["P/B Ratio"]);
+        const qualityScore = stock["ROE (%)"] || 0;
+        const momentumScore = avg([stock["Sales Growth (%)"], stock["1-Year Perf (%)"]]);
+        stock["Value Score"] = valueScore;
+        stock["Quality Score"] = qualityScore;
+        stock["Momentum Score"] = momentumScore;
+        stock["Weighted Total"] = (valueScore * 0.4 + qualityScore * 0.3 + momentumScore * 0.3).toFixed(2);
+      });
+
+      data.sort((a, b) => b["Weighted Total"] - a["Weighted Total"]);
+      renderTable(data);
     }
 
     function rankValue(pe, pb) {
